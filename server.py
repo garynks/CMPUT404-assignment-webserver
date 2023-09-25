@@ -30,9 +30,61 @@ import socketserver
 class MyWebServer(socketserver.BaseRequestHandler):
     
     def handle(self):
+        RESPONSE_200_OK = b"HTTP/1.1 200 OK\r\n"
+        RESPONSE_404_NOT_FOUND = b"HTTP/1.1 404 Not Found\r\n"
+        RESPONSE_405_METHOD_NOT_ALLOWED = b"HTTP/1.1 405 Method Not Allowed\r\n"
+        HTML_CONTENT_HEADER = b"Content-Type: text/html\r\n"
+        CSS_CONTENT_HEADER = b"Content-Type: text/css\r\n"
+
         self.data = self.request.recv(1024).strip()
-        print ("Got a request of: %s\n" % self.data)
-        self.request.sendall(bytearray("OK",'utf-8'))
+        print ("Got a request of: \n%s\n" % self.data.decode())
+        http_method, path = self.data.decode().split(' ')[:2]
+        
+        if http_method == "GET":
+            print("Path", path)
+            if path == "/":
+                self.request.send(RESPONSE_200_OK)
+
+            elif path == "/index.html":
+                index_html = encode_file("www" + path)
+                self.request.send(RESPONSE_200_OK)
+                self.request.send(HTML_CONTENT_HEADER)
+                self.request.send(b"\r\n") # separates headers from request body
+                self.request.send(index_html)
+                self.request.close()
+
+            elif path == "/base.css":
+                base_css = encode_file("www" + path)
+                self.request.sendall(RESPONSE_200_OK)
+                self.request.sendall(CSS_CONTENT_HEADER)
+                self.request.sendall(b"\r\n") # separates headers from request body
+                self.request.sendall(base_css)
+                self.request.close()
+
+            elif path == "/deep/index.html":
+                deep_index_html = encode_file("www" + path)
+                self.request.send(RESPONSE_200_OK)
+                self.request.send(HTML_CONTENT_HEADER)
+                self.request.send(b"\r\n") # separates headers from request body
+                self.request.send(deep_index_html)
+                self.request.close()
+
+            elif path == "/deep/deep.css":
+                deep_css = encode_file("www" + path)
+                self.request.sendall(RESPONSE_200_OK)
+                self.request.sendall(CSS_CONTENT_HEADER)
+                self.request.sendall(b"\r\n") # separates headers from request body
+                self.request.sendall(deep_css)
+                self.request.close()
+
+            else:
+                self.request.sendall(RESPONSE_404_NOT_FOUND)
+
+        else:
+            self.request.sendall(RESPONSE_405_METHOD_NOT_ALLOWED)
+
+def encode_file(path):
+    return open(path, "r", encoding="utf-8").read().encode("utf-8")
 
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8080
@@ -44,3 +96,4 @@ if __name__ == "__main__":
     # Activate the server; this will keep running until you
     # interrupt the program with Ctrl-C
     server.serve_forever()
+    server.server_close()
