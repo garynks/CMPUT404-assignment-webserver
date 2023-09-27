@@ -1,5 +1,6 @@
 #  coding: utf-8 
 import socketserver
+import os
 
 # Copyright 2013 Abram Hindle, Eddie Antonio Santos
 # 
@@ -30,52 +31,37 @@ import socketserver
 class MyWebServer(socketserver.BaseRequestHandler):
     
     def handle(self):
-        RESPONSE_200_OK = b"HTTP/1.1 200 OK\r\n"
+        RESPONSE_301_MOVED_PERMANENTLY = b"HTTP/1.1 301 Moved Permanently\r\n"
         RESPONSE_404_NOT_FOUND = b"HTTP/1.1 404 Not Found\r\n"
         RESPONSE_405_METHOD_NOT_ALLOWED = b"HTTP/1.1 405 Method Not Allowed\r\n"
-        HTML_CONTENT_HEADER = b"Content-Type: text/html\r\n"
-        CSS_CONTENT_HEADER = b"Content-Type: text/css\r\n"
 
         self.data = self.request.recv(1024).strip()
         print ("Got a request of: \n%s\n" % self.data.decode())
         http_method, path = self.data.decode().split(' ')[:2]
+
+        path = self.sanitize_file_path(path)
         
         if http_method == "GET":
-            print("Path", path)
-            if path == "/":
-                self.request.send(RESPONSE_200_OK)
+            local_path = "www" + path
 
-            elif path == "/index.html":
-                index_html = encode_file("www" + path)
-                self.request.send(RESPONSE_200_OK)
-                self.request.send(HTML_CONTENT_HEADER)
-                self.request.send(b"\r\n") # separates headers from request body
-                self.request.send(index_html)
-                self.request.close()
+            # for paths that are not files e.g /deep/
+            if os.path.isdir(local_path):
+                # if path doesn't end with end slash
+                if local_path[-1] != "/":
+                    redirect_location = "Location: %s\r\n" % (path + "/")
+                    self.request.sendall(RESPONSE_301_MOVED_PERMANENTLY)
+                    self.request.sendall(redirect_location.encode())
+                else:
+                    # serve the nested index.html file for directory paths
+                    static_file_path = local_path + "index.html"
 
-            elif path == "/base.css":
-                base_css = encode_file("www" + path)
-                self.request.sendall(RESPONSE_200_OK)
-                self.request.sendall(CSS_CONTENT_HEADER)
-                self.request.sendall(b"\r\n") # separates headers from request body
-                self.request.sendall(base_css)
-                self.request.close()
+                    if os.path.exists(static_file_path):
+                        self.serve_file(static_file_path)
+                    else:
+                        self.request.sendall(RESPONSE_404_NOT_FOUND)
 
-            elif path == "/deep/index.html":
-                deep_index_html = encode_file("www" + path)
-                self.request.send(RESPONSE_200_OK)
-                self.request.send(HTML_CONTENT_HEADER)
-                self.request.send(b"\r\n") # separates headers from request body
-                self.request.send(deep_index_html)
-                self.request.close()
-
-            elif path == "/deep/deep.css":
-                deep_css = encode_file("www" + path)
-                self.request.sendall(RESPONSE_200_OK)
-                self.request.sendall(CSS_CONTENT_HEADER)
-                self.request.sendall(b"\r\n") # separates headers from request body
-                self.request.sendall(deep_css)
-                self.request.close()
+            elif os.path.isfile(local_path):
+                self.serve_file(local_path)
 
             else:
                 self.request.sendall(RESPONSE_404_NOT_FOUND)
@@ -83,8 +69,31 @@ class MyWebServer(socketserver.BaseRequestHandler):
         else:
             self.request.sendall(RESPONSE_405_METHOD_NOT_ALLOWED)
 
-def encode_file(path):
-    return open(path, "r", encoding="utf-8").read().encode("utf-8")
+    def serve_file(self, local_path):
+        RESPONSE_200_OK = b"HTTP/1.1 200 OK\r\n"
+        HTML_CONTENT_HEADER = b"Content-Type: text/html\r\n"
+        CSS_CONTENT_HEADER = b"Content-Type: text/css\r\n"
+
+        static_file = self.encode_file(local_path)
+        file_extension = os.path.splitext(local_path)[1]
+        if file_extension == ".html":
+            content_header = HTML_CONTENT_HEADER
+        elif file_extension == ".css":
+            content_header = CSS_CONTENT_HEADER
+
+        self.request.sendall(RESPONSE_200_OK)
+        self.request.sendall(content_header)
+        self.request.sendall(b"\r\n") # separates headers from request body
+        self.request.sendall(static_file)
+        self.request.close()
+
+    def encode_file(self, path):
+        # takes the content of a file and encodes it into bytes for sending
+        return open(path, "r", encoding="utf-8").read().encode("utf-8")
+
+    def sanitize_file_path(self, path):
+        # prevents directory traversal attacks
+        return path.replace('../', '')
 
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8080
