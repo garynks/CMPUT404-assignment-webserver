@@ -32,8 +32,6 @@ class MyWebServer(socketserver.BaseRequestHandler):
     
     def handle(self):
         RESPONSE_301_MOVED_PERMANENTLY = b"HTTP/1.1 301 Moved Permanently\r\n"
-        RESPONSE_404_NOT_FOUND = b"HTTP/1.1 404 Not Found\r\n"
-        RESPONSE_405_METHOD_NOT_ALLOWED = b"HTTP/1.1 405 Method Not Allowed\r\n"
 
         self.data = self.request.recv(1024).strip()
         print ("Got a request of: \n%s\n" % self.data.decode())
@@ -51,6 +49,7 @@ class MyWebServer(socketserver.BaseRequestHandler):
                     redirect_location = "Location: %s\r\n" % (path + "/")
                     self.request.sendall(RESPONSE_301_MOVED_PERMANENTLY)
                     self.request.sendall(redirect_location.encode())
+                    self.request.close()
                 else:
                     # serve the nested index.html file for directory paths
                     static_file_path = local_path + "index.html"
@@ -58,16 +57,16 @@ class MyWebServer(socketserver.BaseRequestHandler):
                     if os.path.exists(static_file_path):
                         self.serve_file(static_file_path)
                     else:
-                        self.request.sendall(RESPONSE_404_NOT_FOUND)
+                        self.send_404_request()
 
             elif os.path.isfile(local_path):
                 self.serve_file(local_path)
 
             else:
-                self.request.sendall(RESPONSE_404_NOT_FOUND)
+                self.send_404_request()
 
         else:
-            self.request.sendall(RESPONSE_405_METHOD_NOT_ALLOWED)
+            self.send_405_request()
 
     def serve_file(self, local_path):
         RESPONSE_200_OK = b"HTTP/1.1 200 OK\r\n"
@@ -94,6 +93,52 @@ class MyWebServer(socketserver.BaseRequestHandler):
     def sanitize_file_path(self, path):
         # prevents directory traversal attacks
         return path.replace('../', '')
+    
+    def send_404_request(self):
+        RESPONSE_404_NOT_FOUND = b"HTTP/1.1 404 Not Found\r\n"
+        HTML_CONTENT_HEADER = b"Content-Type: text/html\r\n"
+        HTML_404_NOT_FOUND = b"""
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>404 Not Found</title>
+                </head>
+                <body>
+                    <h1>404 Not Found</h1>
+                    <p>The requested URL was not found on this server.</p>
+                </body>
+            </html>
+        """
+
+        self.request.sendall(RESPONSE_404_NOT_FOUND)
+        self.request.sendall(HTML_CONTENT_HEADER)
+        self.request.sendall(b"\r\n") # separates headers from request body
+        self.request.sendall(HTML_404_NOT_FOUND)
+        self.request.close()
+
+    def send_405_request(self):
+        RESPONSE_405_METHOD_NOT_ALLOWED = b"HTTP/1.1 405 Method Not Allowed\r\n"
+        HTML_CONTENT_HEADER = b"Content-Type: text/html\r\n"
+        HTML_405_METHOD_NOT_ALLOWED = b"""
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>405 Method Not Allowed</title>
+                </head>
+                <body>
+                    <h1>405 Method Not Allowed</h1>
+                    <p>The requested method is not allowed for the URL.</p>
+                </body>
+            </html>
+         """
+        
+        self.request.sendall(RESPONSE_405_METHOD_NOT_ALLOWED)
+        self.request.sendall(HTML_CONTENT_HEADER)
+        self.request.sendall(b"\r\n") # separates headers from request body
+        self.request.sendall(HTML_405_METHOD_NOT_ALLOWED)
+        self.request.close()
 
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8080
